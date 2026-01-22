@@ -10,6 +10,7 @@
 clear all
 global datapath   "/Users/ashbelur/Documents/ash belur/BIGPROJECTS/phd/data/NSSO/68th Round - 2011-2012/NSS68_10/"
 global outputpath "/Users/ashbelur/Documents/ash belur/BIGPROJECTS/phd/STATA/NSSO/essay2-FLFPR-Model/"
+global factorpath "/Users/ashbelur/Documents/ash belur/BIGPROJECTS/pythondevelopment/worldvaluessurvey/"
 
 * Start with Household Level Blocks 1 and 2
 use "${datapath}Block_1_2_Identification of sample household and particulars of field operation"
@@ -55,9 +56,41 @@ merge 1:1 HHID Person_Serial_No using "$outputpath/individual_temp", nogen
 * rename HHID_new HHID
 save "${outputpath}individual_temp", replace
 
+import delimited "${factorpath}factors.csv", clear
+rename state State
+destring State, replace
+save "${outputpath}wva_factors.dta", replace
+describe State
+
+import delimited "${factorpath}wvs_averages.csv", clear
+rename state State
+destring State, replace
+save "${outputpath}wva_averages.dta", replace
+describe State
+
+
 * Final Merge - Combining Household and Individual Data
 use "${outputpath}individual_temp"
-merge m:1 HHID using "$outputpath/HH_combined"
+merge m:1 HHID using "$outputpath/HH_combined", nogen
+destring State, replace
+describe State
+
+merge m:1 State using "${outputpath}wva_factors.dta", nogen
+merge m:1 State using "${outputpath}wva_averages.dta"
+
+rename v2  q29
+rename v3  q209
+rename v4  q210
+rename v5  q211
+rename v6  q212
+rename v7  q32
+rename v8  q33
+rename v9  q35
+rename v10 q189
+rename v11 q191
+rename v12 q137
+rename v13 q30
+
 
 * Destring all relevant variables
 destring Usual_Principal_Activity_Status, replace
@@ -177,6 +210,9 @@ drop if Sector==1              // exclude Rural
 
 * tabstat Usual_Principal_Activity_Status, stats(count mean)
 
+*****
+* Generate Key Dependent Dummy Variable
+*****
 tabulate Usual_Principal_Activity_Status
 * 11 - self employed
 * 21 - unpaid work
@@ -209,54 +245,316 @@ replace other_members_earnings_pc=ln(other_members_earnings_pc)
 local years 2011
 
 foreach year in `years' {
-  probit employed i.educ other_members_earnings_pc male_salaried i.educ_h i.socialgroup Age Age2 n_child_04 n_child_514 male_agri_share male_manu_share male_wsvc_share male_othr_share i.State [pweight = weight]
+    probit employed i.educ other_members_earnings_pc male_salaried i.educ_h i.socialgroup Age Age2 n_child_04 n_child_514 male_agri_share male_manu_share male_wsvc_share male_othr_share i.State [pweight = weight]
   margins, dydx(*) post
   
   estimates store yr`year'
+  estimates store m0_`year'
   estout yr`year'
   esttab yr`year' using "${outputpath}latex/table1.tex", replace ///
    label booktabs b(%6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.4f %6.3f) se(%6.3f) star(* 0.1 ** 0.05 *** 0.01) ///
    prehead(`"\begin{table}[htbp]\centering"' `"\footnotesize"' ///
             `"\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}"' ///
-            `"\caption{Probit Estimation Results - Urban (Average Margial Effects)}"' ///
+            `"\caption{Probit Estimation Results - Urban (Average Marginal Effects)}"' ///
             `"\begin{tabular}{l*{@M}{c}}"' ///
             `"\toprule"' ) ///
-   title("Probit Estimation Results (Average Margial Effects)") ///
+   title("Probit Estimation Results (Average Marginal Effects)") ///
    drop(*.State 1.educ 1.educ_h 1.socialgroup) ///
    mtitles("2011") ///
-   refcat(2.socialgroup "Social Group (Ref=Hindu OBC)" 2.educ "Own Education (Ref = Illiterate)" 2.educ_h "Household Head Education (Ref=Illiterate)" male_agri_share "District Male Employment Share (Ref=Construction)", nolabel) ///
+   refcat(2.socialgroup "\textbf{Social Group (Ref=Hindu OBC)}" 2.educ "\textbf{Own Education (Ref = Illiterate)}" other_members_earnings_pc "\textbf{Securtity}" 2.educ_h "\textbf{Household Head Education (Ref=Illiterate)}" male_agri_share "\textbf{District Male Employment Share (Ref=Construction)}", nolabel) ///
    coeflabels(2.educ "Literate" 3.educ "Primary" 4.educ "Middle" 5.educ "Secondary" 6.educ "Graduate" ///
    other_members_earnings_pc "Log Income (pc)" male_salaried "Male Salaried Emp." ///
    2.educ_h "Literate" 3.educ_h "Primary" 4.educ_h "Middle" 5.educ_h "Secondary" 6.educ_h "Graduate" ///
    2.socialgroup "SCST" 3.socialgroup "Muslim" 4.socialgroup "Hindu Other" Age "Age" Age2 "Age Squared"  ///
    n_child_04 "Children 0-4" n_child_514 "Children 5-14" male_agri_share "Agriculture" male_manu_share "Manufacturing" male_wsvc_share "Services" male_othr_share "Other" _cons "Constant")
+}
 
-     probit employed i.educ other_members_earnings_pc male_salaried i.educ_h i.socialgroup Age Age2 n_child_04 n_child_514 male_agri_share male_manu_share male_wsvc_share male_othr_share [pweight = weight]
-  margins, dydx(*) post
-  
-  estimates store yr`year'
-  estout yr`year'
-  esttab yr`year' using "${outputpath}latex/table2.tex", replace ///
-   label booktabs b(%6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.4f %6.3f) se(%6.3f) star(* 0.1 ** 0.05 *** 0.01) ///
-   prehead(`"\begin{table}[htbp]\centering"' `"\footnotesize"' ///
+gen Political = (q29+q209+q210+q211+q212) / 5
+* Regressions with No State Fixed Effects
+* Political Questions
+local controls1 "i.educ other_members_earnings_pc male_salaried"
+local controls2 "i.educ_h i.socialgroup Age Age2 n_child_04 n_child_514 male_agri_share male_manu_share male_wsvc_share male_othr_share"
+foreach year in `years' {     
+    probit employed `controls1' q29 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m2_`year'
+
+    probit employed `controls1' q209 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m3_`year'
+
+	probit employed `controls1' q210 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m4_`year'
+
+	probit employed `controls1' q211 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m5_`year'
+
+	probit employed `controls1' q212 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m6_`year'
+
+	probit employed `controls1' Political `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m7_`year'
+	
+*   estout m1_`year'
+    esttab  m2_`year' m3_`year' m4_`year' m5_`year' m6_`year' m7_`year' using "${outputpath}latex/table_political.tex", replace ///
+   label booktabs b(%6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.5f %6.3f) se(%6.3f) star(* 0.1 ** 0.05 *** 0.01) ///
+   prehead(`"\begin{table}[htbp]\centering"' `"\scriptsize"' ///
             `"\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}"' ///
-            `"\caption{Probit Estimation Results - Urban (Average Margial Effects)}"' ///
+            `"\caption{Probit Estimation Results - Urban (Political)}"' ///
             `"\begin{tabular}{l*{@M}{c}}"' ///
             `"\toprule"' ) ///
-   title("Probit Estimation Results (Average Margial Effects)") ///
-   drop(1.educ 1.educ_h 1.socialgroup) ///
-   mtitles("2011") ///
-   refcat(2.socialgroup "Social Group (Ref=Hindu OBC)" 2.educ "Own Education (Ref = Illiterate)" 2.educ_h "Household Head Education (Ref=Illiterate)" male_agri_share "District Male Employment Share (Ref=Construction)", nolabel) ///
+   title("Probit Estimation Results (Average Marginal Effects)") ///
+   drop(*.educ *.educ_h *.socialgroup male*share n*child* Age* other_members_earnings_pc male_salaried) ///
+   mgroups("Limited to Seven States", pattern(1 0 0 0) ///
+            prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
+   mtitles("Q29" "Q209" "Q210" "Q211" "Q212" "Political") ///
+   refcat(2.educ "\textbf{Own Education (Ref = Illiterate)}" 2.educ_h "\textbf{HHead Education (Ref=Illiterate)}" 2.socialgroup "\textbf{Social Group (Ref=Hindu OBC)}"  male_agri_share "\textbf{Dist. M Employment Share (Ref=Const.)}", nolabel) ///
    coeflabels(2.educ "Literate" 3.educ "Primary" 4.educ "Middle" 5.educ "Secondary" 6.educ "Graduate" ///
-   other_members_earnings_pc "Log Income (pc)" male_salaried "Male Salaried Emp." ///
+   other_members_earnings_pc "Log Income (pc)" male_salaried "M Salaried Emp." ///
+   q29 "Political Leaders" q209 "Petitions" q210 "Boycotts" q211 "Demonstrations" q212 "Strikes" ///
    2.educ_h "Literate" 3.educ_h "Primary" 4.educ_h "Middle" 5.educ_h "Secondary" 6.educ_h "Graduate" ///
    2.socialgroup "SCST" 3.socialgroup "Muslim" 4.socialgroup "Hindu Other" Age "Age" Age2 "Age Squared"  ///
-   n_child_04 "Children 0-4" n_child_514 "Children 5-14" male_agri_share "Agriculture" male_manu_share "Manufacturing" male_wsvc_share "Services" male_othr_share "Other" _cons "Constant")
-   
-  
+   n_child_04 "Children 0-4" n_child_514 "Children 5-14" male_agri_share "Agriculture" male_manu_share "Manufacturing" male_wsvc_share "Services" male_othr_share "Other" _cons "Constant")   
+}
+
+gen Economic = (q32+q33) / 2
+
+foreach year in `years' {     
+    probit employed `controls1' q32 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m2_`year'
+
+    probit employed `controls1' q33 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m3_`year'
+
+	probit employed `controls1' q35 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m4_`year'
+
+	probit employed `controls1' Economic `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m5_`year'
+	
+*   estout m1_`year'
+    esttab  m2_`year' m3_`year' m4_`year' m5_`year' using "${outputpath}latex/table_economic.tex", replace ///
+   label booktabs b(%6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.5f %6.3f) se(%6.3f) star(* 0.1 ** 0.05 *** 0.01) ///
+   prehead(`"\begin{table}[htbp]\centering"' `"\scriptsize"' ///
+            `"\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}"' ///
+            `"\caption{Probit Estimation Results - Urban (Economic)}"' ///
+            `"\begin{tabular}{l*{@M}{c}}"' ///
+            `"\toprule"' ) ///
+   title("Probit Estimation Results (Average Marginal Effects)") ///
+   drop(*.educ *.educ_h *.socialgroup male*share n*child* Age* other_members_earnings_pc male_salaried) ///
+   mgroups("Limited to Seven States", pattern(1 0 0 0) ///
+            prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
+   mtitles("Q32" "Q33" "Q35" "Economic") ///
+   refcat(2.educ "\textbf{Own Education (Ref = Illiterate)}" 2.educ_h "\textbf{HHead Education (Ref=Illiterate)}" 2.socialgroup "\textbf{Social Group (Ref=Hindu OBC)}"  male_agri_share "\textbf{Dist. M Employment Share (Ref=Const.)}", nolabel) ///
+   coeflabels(2.educ "Literate" 3.educ "Primary" 4.educ "Middle" 5.educ "Secondary" 6.educ "Graduate" ///
+   other_members_earnings_pc "Log Income (pc)" male_salaried "M Salaried Emp." ///
+   q32 "Housewife - Fullfilling" q33 "Scarce Jobs" q35 "Woman Earning More"  ///
+   2.educ_h "Literate" 3.educ_h "Primary" 4.educ_h "Middle" 5.educ_h "Secondary" 6.educ_h "Graduate" ///
+   2.socialgroup "SCST" 3.socialgroup "Muslim" 4.socialgroup "Hindu Other" Age "Age" Age2 "Age Squared"  ///
+   n_child_04 "Children 0-4" n_child_514 "Children 5-14" male_agri_share "Agriculture" male_manu_share "Manufacturing" male_wsvc_share "Services" male_othr_share "Other" _cons "Constant")   
+}
+
+gen Violence = (q189+q191+q137) / 3
+
+foreach year in `years' {     
+    probit employed `controls1' q189 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m2_`year'
+
+    probit employed `controls1' q191 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m3_`year'
+
+	probit employed `controls1' q137 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m4_`year'
+
+	probit employed `controls1' Violence `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m5_`year'
+	
+*   estout m1_`year'
+    esttab  m2_`year' m3_`year' m4_`year' m5_`year' using "${outputpath}latex/table_violence.tex", replace ///
+   label booktabs b(%6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.5f %6.3f) se(%6.3f) star(* 0.1 ** 0.05 *** 0.01) ///
+   prehead(`"\begin{table}[htbp]\centering"' `"\scriptsize"' ///
+            `"\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}"' ///
+            `"\caption{Probit Estimation Results - Urban (Violence)}"' ///
+            `"\begin{tabular}{l*{@M}{c}}"' ///
+            `"\toprule"' ) ///
+   title("Probit Estimation Results (Average Marginal Effects)") ///
+   drop(*.educ *.educ_h *.socialgroup male*share n*child* Age* other_members_earnings_pc male_salaried) ///
+   mgroups("Limited to Seven States", pattern(1 0 0 0) ///
+            prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
+   mtitles("Q189" "Q191" "Q137" "Violence") ///
+   refcat(2.educ "\textbf{Own Education (Ref = Illiterate)}" 2.educ_h "\textbf{HHead Education (Ref=Illiterate)}" 2.socialgroup "\textbf{Social Group (Ref=Hindu OBC)}"  male_agri_share "\textbf{Dist. M Employment Share (Ref=Const.)}", nolabel) ///
+   coeflabels(2.educ "Literate" 3.educ "Primary" 4.educ "Middle" 5.educ "Secondary" 6.educ "Graduate" ///
+   other_members_earnings_pc "Log Income (pc)" male_salaried "M Salaried Emp." ///
+   q189 "Beats Wife" q191 "Violence - Other People" q137 "Street Violence" ///
+   2.educ_h "Literate" 3.educ_h "Primary" 4.educ_h "Middle" 5.educ_h "Secondary" 6.educ_h "Graduate" ///
+   2.socialgroup "SCST" 3.socialgroup "Muslim" 4.socialgroup "Hindu Other" Age "Age" Age2 "Age Squared"  ///
+   n_child_04 "Children 0-4" n_child_514 "Children 5-14" male_agri_share "Agriculture" male_manu_share "Manufacturing" male_wsvc_share "Services" male_othr_share "Other" _cons "Constant")   
+}
+
+gen Education = (q30)
+
+foreach year in `years' {     
+    probit employed `controls1' q30 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m2_`year'
+
+	probit employed `controls1' Education `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m3_`year'
+	
+*   estout m1_`year'
+    esttab  m2_`year' m3_`year' using "${outputpath}latex/table_education.tex", replace ///
+   label booktabs b(%6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.5f %6.3f) se(%6.3f) star(* 0.1 ** 0.05 *** 0.01) ///
+   prehead(`"\begin{table}[htbp]\centering"' `"\scriptsize"' ///
+            `"\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}"' ///
+            `"\caption{Probit Estimation Results - Urban (Education)}"' ///
+            `"\begin{tabular}{l*{@M}{c}}"' ///
+            `"\toprule"' ) ///
+   title("Probit Estimation Results (Average Marginal Effects)") ///
+   drop(*.educ *.educ_h *.socialgroup male*share n*child* Age* other_members_earnings_pc male_salaried) ///
+   mgroups("Limited to Seven States", pattern(1 0 0 0) ///
+            prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
+   mtitles("Q30" "Education") ///
+   refcat(2.educ "\textbf{Own Education (Ref = Illiterate)}" 2.educ_h "\textbf{HHead Education (Ref=Illiterate)}" 2.socialgroup "\textbf{Social Group (Ref=Hindu OBC)}"  male_agri_share "\textbf{Dist. M Employment Share (Ref=Const.)}", nolabel) ///
+   coeflabels(2.educ "Literate" 3.educ "Primary" 4.educ "Middle" 5.educ "Secondary" 6.educ "Graduate" ///
+   other_members_earnings_pc "Log Income (pc)" male_salaried "M Salaried Emp." ///
+   q30 "University Education"  ///
+   2.educ_h "Literate" 3.educ_h "Primary" 4.educ_h "Middle" 5.educ_h "Secondary" 6.educ_h "Graduate" ///
+   2.socialgroup "SCST" 3.socialgroup "Muslim" 4.socialgroup "Hindu Other" Age "Age" Age2 "Age Squared"  ///
+   n_child_04 "Children 0-4" n_child_514 "Children 5-14" male_agri_share "Agriculture" male_manu_share "Manufacturing" male_wsvc_share "Services" male_othr_share "Other" _cons "Constant")   
+}
+
+foreach year in `years' {     
+    probit employed `controls1' `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m2_`year'
+
+	probit employed `controls1' Political  Violence Education Economic `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store m3_`year'
+	
+*   estout m1_`year'
+    esttab  m2_`year' m3_`year' using "${outputpath}latex/table_4groups.tex", replace ///
+   label booktabs b(%6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.5f %6.3f) se(%6.3f) star(* 0.1 ** 0.05 *** 0.01) ///
+   prehead(`"\begin{table}[htbp]\centering"' `"\scriptsize"' ///
+            `"\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}"' ///
+            `"\caption{Probit Estimation Results - Urban (Four Groups)}"' ///
+            `"\begin{tabular}{l*{@M}{c}}"' ///
+            `"\toprule"' ) ///
+   title("Probit Estimation Results (Average Marginal Effects)") ///
+   drop(*.educ *.educ_h *.socialgroup male*share n*child* Age* other_members_earnings_pc male_salaried) ///
+   mgroups("Limited to Seven States", pattern(1 0 0 0) ///
+            prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
+   mtitles("No SN" "4 Groups") ///
+   refcat(2.educ "\textbf{Own Education (Ref = Illiterate)}" 2.educ_h "\textbf{HHead Education (Ref=Illiterate)}" 2.socialgroup "\textbf{Social Group (Ref=Hindu OBC)}"  male_agri_share "\textbf{Dist. M Employment Share (Ref=Const.)}", nolabel) ///
+   coeflabels(2.educ "Literate" 3.educ "Primary" 4.educ "Middle" 5.educ "Secondary" 6.educ "Graduate" ///
+   other_members_earnings_pc "Log Income (pc)" male_salaried "M Salaried Emp." ///
+   2.educ_h "Literate" 3.educ_h "Primary" 4.educ_h "Middle" 5.educ_h "Secondary" 6.educ_h "Graduate" ///
+   2.socialgroup "SCST" 3.socialgroup "Muslim" 4.socialgroup "Hindu Other" Age "Age" Age2 "Age Squared"  ///
+   n_child_04 "Children 0-4" n_child_514 "Children 5-14" male_agri_share "Agriculture" male_manu_share "Manufacturing" male_wsvc_share "Services" male_othr_share "Other" _cons "Constant")   
 }
 
 
+
+* Factor Analysis
+*
+foreach year in `years' {
+	probit employed `controls1' `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store f0_`year'
+	
+	probit employed `controls1' f1 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store f1_`year'
+
+	probit employed `controls1' f2 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store f2_`year'
+
+	probit employed `controls1' f3 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store f3_`year'
+
+	probit employed `controls1' f1 f2 f3 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store f4_`year'
+	
+	esttab f0_`year' f1_`year' f2_`year' f3_`year' f4_`year' using "${outputpath}latex/table_factor.tex", replace ///
+    label booktabs b(%6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.5f %6.3f) se(%6.3f) star(* 0.1 ** 0.05 *** 0.01) ///
+   prehead(`"\begin{table}[htbp]\centering"' `"\scriptsize"' ///
+            `"\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}"' ///
+            `"\caption{Probit Estimation Results - Urban (Factor Analysis)}"' ///
+            `"\begin{tabular}{l*{@M}{c}}"' ///
+            `"\toprule"' ) ///
+    title("Probit Estimation Results (Factor Analysis)") ///
+    drop(*.educ *.educ_h *.socialgroup male*share n*child* Age* other_members_earnings_pc male_salaried) ///
+    mgroups("No Factors" "Indiv Factors", pattern(1 1 0 0) ///
+            prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
+    mtitles("All" "F1" "F2" "F3" "All") ///
+    refcat(2.educ "\textbf{Own Education (Ref = Illiterate)}"  q33 "\textbf{Social Norms}" 2.educ_h "\textbf{HHead Education (Ref=Illiterate)}" 2.socialgroup "\textbf{Social Group (Ref=Hindu OBC)}"  male_agri_share "\textbf{Dist. M Employment Share (Ref=Const.)}", nolabel) ///
+    coeflabels(2.educ "Literate" 3.educ "Primary" 4.educ "Middle" 5.educ "Secondary" 6.educ "Graduate" ///
+    other_members_earnings_pc "Log Income (pc)" male_salaried "M Salaried Emp." ///
+	f1 "Activism" f2 "Leaders - Jobs - Education" f3 "Home Life - Violence" ///
+   2.educ_h "Literate" 3.educ_h "Primary" 4.educ_h "Middle" 5.educ_h "Secondary" 6.educ_h "Graduate" ///
+   2.socialgroup "SCST" 3.socialgroup "Muslim" 4.socialgroup "Hindu Other" Age "Age" Age2 "Age Squared"  ///
+   n_child_04 "Children 0-4" n_child_514 "Children 5-14" male_agri_share "Agriculture" male_manu_share "Manufacturing" male_wsvc_share "Services" male_othr_share "Other" _cons "Constant")   
+
+}
+
+foreach year in `years' {
+	probit employed `controls1' `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store f0_`year'
+	
+	probit employed `controls1' f1 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store f1_`year'
+
+	probit employed `controls1' f2 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store f2_`year'
+
+	probit employed `controls1' f3 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store f3_`year'
+
+	probit employed `controls1' f1 f2 f3 `controls2' [pweight = weight]
+    margins, dydx(*) post
+    estimates store f4_`year'
+	
+	esttab f0_`year' f1_`year' f2_`year' f3_`year' f4_`year' using "${outputpath}latex/table3.tex", replace ///
+    label booktabs b(%6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.5f %6.3f) se(%6.3f) star(* 0.1 ** 0.05 *** 0.01) ///
+   prehead(`"\begin{table}[htbp]\centering"' `"\scriptsize"' ///
+            `"\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}"' ///
+            `"\caption{Probit Estimation Results - Urban (Average Marginal Effects)}"' ///
+            `"\begin{tabular}{l*{@M}{c}}"' ///
+            `"\toprule"' ) ///
+    title("Probit Estimation Results (Average Marginal Effects)") ///
+    drop(1.educ 1.educ_h 1.socialgroup) ///
+    mgroups("No Factors" "Indiv Factors", pattern(1 1 0 0) ///
+            prefix(\multicolumn{@span}{c}{) suffix(}) span erepeat(\cmidrule(lr){@span})) ///
+    mtitles("All" "F1" "F2" "F3" "All") ///
+    refcat(2.educ "\textbf{Own Education (Ref = Illiterate)}"  q33 "\textbf{Social Norms}" 2.educ_h "\textbf{HHead Education (Ref=Illiterate)}" 2.socialgroup "\textbf{Social Group (Ref=Hindu OBC)}"  male_agri_share "\textbf{Dist. M Employment Share (Ref=Const.)}", nolabel) ///
+    coeflabels(2.educ "Literate" 3.educ "Primary" 4.educ "Middle" 5.educ "Secondary" 6.educ "Graduate" ///
+    other_members_earnings_pc "Log Income (pc)" male_salaried "M Salaried Emp." ///
+	f1 "Factor 1" f2 "Factor 2" f3 "Factor 3" ///
+   2.educ_h "Literate" 3.educ_h "Primary" 4.educ_h "Middle" 5.educ_h "Secondary" 6.educ_h "Graduate" ///
+   2.socialgroup "SCST" 3.socialgroup "Muslim" 4.socialgroup "Hindu Other" Age "Age" Age2 "Age Squared"  ///
+   n_child_04 "Children 0-4" n_child_514 "Children 5-14" male_agri_share "Agriculture" male_manu_share "Manufacturing" male_wsvc_share "Services" male_othr_share "Other" _cons "Constant")   
+
+}
 
 * Create Averages across Variables
 * tabstat employed General_Education
