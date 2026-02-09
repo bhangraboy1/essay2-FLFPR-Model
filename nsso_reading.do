@@ -5,6 +5,12 @@
 
 * Getting the Data Together
 
+* rename all variable to lowercase
+* possibly drop variables I dont need
+* Bring in a new Wave of Data - merge
+* try to append another year into the dataset
+* try to merge all years into the dataset
+
 * Define Directory for Files to be written to
 clear all
 global datapath   "/Users/ashbelur/Documents/ash belur/BIGPROJECTS/phd/data/NSSO/68th Round - 2011-2012/NSS68_10/"
@@ -104,9 +110,14 @@ destring Social_Group, replace
 destring Religion, replace
 destring NIC_2008, replace
 destring Sector, replace
+
+
+rename Sex sex
+rename Sector sector
 rename Age age
 
 gen age_bin = floor(age / 5) * 5
+gen year=2011
 
 * Generate Weights
 generate weight = MLT/100 if (NSS==NSC)
@@ -114,7 +125,7 @@ replace weight = MLT/200 if (NSS!=NSC)
 
 * Create Male Head of Housedhold Education Level
 * Relation to Head is Spouse
-gen h_educ_temp = General_Education if Relation_to_Head == 1 & Sex == 1
+gen h_educ_temp = General_Education if Relation_to_Head == 1 & sex == 1
 bysort HHID: egen General_Education_H = max(h_educ_temp)
 drop h_educ_temp
 * Check
@@ -133,16 +144,16 @@ drop child_04_ind child_514_ind
 *
 * Presence of Male Salaried Employee - Security of Household Income
 *
-gen male_salaried_ind = (Sex==1) & (Usual_Principal_Activity_Status==31)
+gen male_salaried_ind = (sex==1) & (Usual_Principal_Activity_Status==31)
 bysort HHID: egen male_salaried = max(male_salaried_ind)
-* list HHID Person_Serial_No Usual_Principal_Activity_Status male_salaried Sex Age in 1/15
+* list HHID Person_Serial_No Usual_Principal_Activity_Status male_salaried sex Age in 1/15
  
 * Share of Male Workers in Each Industry Type
 egen dist_id = group(State District)
 
 gen nic3 = floor(NIC_2008 / 100)
 gen is_worker = (Usual_Principal_Activity_Status <= 51)
-gen male_worker = (Sex == 1 & is_worker == 1)
+gen male_worker = (sex == 1 & is_worker == 1)
 bysort dist_id: egen dist_male_workers_w = total(male_worker * weight)
 
 gen cat_agri  = (male_worker == 1 & (1 <= nic3 & nic3 <= 32))
@@ -151,11 +162,11 @@ gen cat_const = (male_worker == 1 & (411 <= nic3 & nic3 <= 439))
 gen cat_wsvc  = (male_worker == 1 & (620 <= nic3 & nic3 <= 829))
 gen cat_othr  = (male_worker == 1 & cat_agri==0 & cat_manu==0 & cat_const==0 & cat_wsvc==0)
 
-replace cat_agri  = (Sex == 2 & (1 <= nic3 & nic3 <= 32))
-replace cat_manu  = (Sex == 2 & (101 <= nic3 & nic3 <= 332))
-replace cat_const = (Sex == 2 & (411 <= nic3 & nic3 <= 439))
-replace cat_wsvc  = (Sex == 2 & (620 <= nic3 & nic3 <= 829))
-replace cat_othr  = (Sex == 2 & cat_agri==0 & cat_manu==0 & cat_const==0 & cat_wsvc==0)
+replace cat_agri  = (sex == 2 & (1 <= nic3 & nic3 <= 32))
+replace cat_manu  = (sex == 2 & (101 <= nic3 & nic3 <= 332))
+replace cat_const = (sex == 2 & (411 <= nic3 & nic3 <= 439))
+replace cat_wsvc  = (sex == 2 & (620 <= nic3 & nic3 <= 829))
+replace cat_othr  = (sex == 2 & cat_agri==0 & cat_manu==0 & cat_const==0 & cat_wsvc==0)
 
 gen     cat_work = 1 if (cat_agri==1)
 replace cat_work = 2 if (cat_manu==1)
@@ -173,9 +184,9 @@ foreach var of varlist cat_agri cat_manu cat_const cat_wsvc cat_othr {
     replace male_`name'_share = 0 if dist_male_workers_w == 0
 }
 
-* list dist_id Person_Serial_No Sex NIC_2008 nic3 cat_agri cat_manu cat_const cat_wsvc cat_othr in 1/35 if(Sex==1)
+* list dist_id Person_Serial_No Sex NIC_2008 nic3 cat_agri cat_manu cat_const cat_wsvc cat_othr in 1/35 if(sex==1)
 
-list dist_id Person_Serial_No Sex NIC_2008 nic3 male_agri_share male_manu_share male_const_share male_wsvc_share male_othr_share in 1/35
+list dist_id Person_Serial_No sex NIC_2008 nic3 male_agri_share male_manu_share male_const_share male_wsvc_share male_othr_share in 1/35
 
 * tabulate n_child_04
 * tabulate n_child_514
@@ -221,14 +232,6 @@ save "${outputpath}final_combined", replace
 
 tab _merge
 
-* Filter Variables Down
-* Cuts group in to Age cohort from 25-54
-drop if age < 25               // exclude under 25
-drop if age > 54               // exclude over 54
-drop if Marital_Status != 2.   // keep only Married
-drop if Sex == 1               // exclude Males
-drop if Relation_to_Head == 1  // exclude Female Head of Household Self
-drop if Sector==1              // exclude Rural
 
 * tabstat Usual_Principal_Activity_Status, stats(count mean)
 
@@ -243,8 +246,20 @@ tabulate Usual_Principal_Activity_Status
 * 51 - casual worker
 * 81 - unemployed
 
+* 12 - employer
+* 91 - studying
+* 92 - domestic duties only
+* 93 - weaving for household
+* 94 - rentiers, pensioners
+* 95 - not able to work
+* 97 - other - begging prostitution
+
 generate employed=0
 replace employed=1 if (Usual_Principal_Activity_Status==11) | (Usual_Principal_Activity_Status==21) | (Usual_Principal_Activity_Status==31) | (Usual_Principal_Activity_Status==41) | (Usual_Principal_Activity_Status==51) | (Usual_Principal_Activity_Status==81)
+
+generate kind_employment=3
+replace  kind_employment=1 if (Usual_Principal_Activity_Status==31)
+replace  kind_employment=2 if (Usual_Principal_Activity_Status==41) | (Usual_Principal_Activity_Status==51)
 
 generate age2 = age * age
 tabulate employed
