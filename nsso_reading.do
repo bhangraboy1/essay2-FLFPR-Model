@@ -247,9 +247,10 @@ append using "${outputpath}original"
 save "${outputpath}combined", replace
 
 
-*
+**************************************************************************************************************
 * >>> Loading in 64th Round 2007/2008 Data <<<
-*
+**************************************************************************************************************
+
 
 global datapath   "/Users/ashbelur/Documents/ash belur/BIGPROJECTS/phd/data/NSSO/64th Round - 2007-2008/NSS64_10/"
 * Start with Household Level Blocks 1 and 2
@@ -349,9 +350,10 @@ save "${outputpath}new2", replace
 append using "${outputpath}combined"
 save "${outputpath}combined", replace
 
-*
+**************************************************************************************************************
 * >>> Loading in 61st Round 2004/2005 Data <<<
-*
+**************************************************************************************************************
+
 
 global datapath   "/Users/ashbelur/Documents/ash belur/BIGPROJECTS/phd/data/NSSO/61st Round - 2004-2005/NSS61_10/"
 * Start with Household Level Blocks 1 and 2
@@ -439,10 +441,99 @@ save "${outputpath}new3", replace
 append using "${outputpath}combined"
 save "${outputpath}combined", replace
 
+**************************************************************************************************************
+* >>> Loading in 55th Round 1999/2000 Data <<<
+**************************************************************************************************************
+global datapath   "/Users/ashbelur/Documents/ash belur/BIGPROJECTS/phd/data/NSSO/55th Round - 1999-2000/NSS55_10/"
+* Start with Household Level Blocks 1 and 2
+use "${datapath}Block3-sch10--Household-Characteristics-records" // CHANGED NAME
+gen HHID = Key_hhold // Created HHID
+sort HHID
+gen year=1999
+rename B3_q2 Social_Group
+rename B3_q3 Religion
+save "${outputpath}HH_combined", replace
+* HHID
+
+* Prepare Block 4 Individual Characteristics
+use "${datapath}Block4-sch10-and-10dot1-Records-combined"
+capture rename Personal_Serial_no Person_Serial_No
+gen HHID = Key_Hhold // Created HHID
+rename B4_q1 Person_Serial_No
+rename B4_q4 Sex
+rename B4_q5 Age
+rename B4_q7 General_Education
+rename B4_q6 Marital_Status
+
+sort HHID Person_Serial_No
+save "${outputpath}individual_temp", replace
+
+* Merging Block 5 with Block 4
+use "${datapath}Block51-sch10-and-10dot1-Records-combined"
+rename B51_q1 Person_Serial_No
+rename B51_q3 Usual_Principal_Activity_Status
+rename B51_q5 NIC_1998
+
+gen HHID = Key_Hhold // Created HHID
+
+merge 1:1 HHID Person_Serial_No using "${outputpath}individual_temp", nogen
+* rename B51_q2 Age
+save "${outputpath}individual_temp", replace
+
+use "${datapath}Block53-sch10-and-10dot1-Records-combined"
+gen HHID = Key_Hhold_slno // Created HHID
+* rename Person_Serial_No Person_Serial_No_Old
+rename Prsn_slno_B53_q1 Person_Serial_No
+rename B53_q17 Wage_and_Salary_Earnings_Total
+
+* Calculating Other Members Weekly Earnings on a per capita basis
+collapse(sum) weekly_earnings = Wage_and_Salary_Earnings_Total, by(HHID Person_Serial_No)
+bysort HHID: egen HH_total_earnings = total(weekly_earnings)
+gen other_members_earnings = HH_total_earnings - weekly_earnings
+
+bysort HHID: gen hh_size = _N
+gen other_members_count = hh_size - 1
+
+gen other_members_earnings_pc = other_members_earnings / other_members_count
+
+merge 1:1 HHID Person_Serial_No using "${outputpath}individual_temp", nogen
+save "${outputpath}individual_temp", replace
+
+
+* World Values Survey from Python Code
+import delimited "${factorpath}factors.csv", clear
+rename state State
+destring State, replace
+save "${outputpath}wva_factors.dta", replace
+describe State
+
+import delimited "${factorpath}wvs_averages.csv", clear
+rename state State
+destring State, replace
+save "${outputpath}wva_averages.dta", replace
+describe State
+
+* Final Merge - Combining Household and Individual Data
+use "${outputpath}individual_temp"
+merge m:1 HHID using "${outputpath}HH_combined", nogen
+* rename STATE_CODE State // CHANGED
+destring State, replace
+describe State
+
+merge m:1 State using "${outputpath}wva_factors.dta", nogen
+merge m:1 State using "${outputpath}wva_averages.dta"
+
+rename hh_size HH_Size
+
+* CORRECTION
+rename Wgt_10_10_1_SR_comb weight
+
+save "${outputpath}new4", replace
+append using "${outputpath}combined", force
+save "${outputpath}combined", replace
+
 
 display "DONE"
-
- 
 **************************************************************************************************************
 **************************************************************************************************************
 **************************************************************************************************************
@@ -459,9 +550,11 @@ destring State, replace
 destring MLT, replace
 destring Social_Group, replace
 destring Religion, replace
-destring NIC_2008, replace
 destring Sector, replace
+
+destring NIC_2008, replace
 destring NIC_2004, replace
+destring NIC_1998, replace
 
 * Recoding General Education to match 2011 Survey
 replace General_Education=5 if General_Education==6 & year==2007
@@ -471,10 +564,12 @@ replace General_Education=8 if General_Education==10 & year==2007
 replace General_Education=10 if General_Education==11 & year==2007
 replace General_Education=13 if General_Education==14 & year==2007
 
+**************************************************************************************************************
 * CHECK
-tabstat Age Sex Sector Social_Group Usual_Principal_Activity_Status General_Education, by(year) stats(mean N)
 
+tabstat Age Sex Sector Social_Group Usual_Principal_Activity_Status General_Education Marital_Status, by(year) stats(mean N)
 
+*
 **************************************************************************************************************
 * SECTION
 * Make all Variable Names lowercase
@@ -543,10 +638,12 @@ bysort HHID: egen male_salaried = max(male_salaried_ind)
 * Share of Male Workers in Each Industry Type
 egen dist_id = group(State District)
 
+* CORRECTION
 gen nic3     = floor(NIC_2008 / 100) if year==2011
 replace nic3 = floor(NIC_2004 / 100) if year==2009
 replace nic3 = floor(NIC_2004 / 100) if year==2007
 replace nic3 = floor(NIC_2004 / 100) if year==2004
+replace nic3 = floor(NIC_1998 / 100) if year==1999
 
 gen is_worker = (Usual_Principal_Activity_Status <= 51)
 gen male_worker = (sex == 1 & is_worker == 1)
@@ -595,10 +692,10 @@ tabstat age sector Usual_Principal_Activity_Status General_Education, by(year) s
 * Converting Education Variable from Survey to Categories
 * This could also be done after dropping Males
 generate educ=1
-replace  educ=2 if (General_Education == 2) | (General_Education==3) | (General_Education==4) | (General_Education==5)
+replace  educ=2 if (General_Education==2) | (General_Education==3) | (General_Education==4) | (General_Education==5)
 replace  educ=3 if (General_Education==6)
 replace  educ=4 if (General_Education==7)
-replace  educ=5 if (General_Education==8) | (General_Education==10) | (General_Education==11)
+replace  educ=5 if (General_Education==8)  | (General_Education==10) | (General_Education==11)
 replace  educ=6 if (General_Education==12) | (General_Education==13)
 
 label define educ_label 1 "Illiterate" 2 "Lit. No Sch" 3 "Primary" 4 "Middle" 5 "Secondary" 6 "Graduate"
@@ -631,7 +728,7 @@ recast int socialgroup
 *****
 * Generate Key Dependent Dummy Variable
 *****
-tabulate Usual_Principal_Activity_Status
+* tabulate Usual_Principal_Activity_Status
 * 11 - self employed
 * 21 - unpaid work
 * 31 - regular employee
@@ -686,14 +783,28 @@ gen Violence = (q189+q191+q137) / 3
 * 51 - casual worker
 * 81 - unemployed
 
+**************************************************************************************************************
 * CHECK
-display "CHECKING TABSTAT"
-tabstat age sex sector Usual_Principal_Activity_Status General_Education, by(year) stats(mean N)
+tabstat age sex sector Social_Group Usual_Principal_Activity_Status General_Education, by(year) stats(mean N)
+
+*
+**************************************************************************************************************
+
+tabstat age sex educ Marital_Status, by(year)
+
 
 * Filter Variables Down
 drop if age < 25               // exclude under 25
+tabstat age sex educ Marital_Status Usual_Principal_Activity_Status, by(year)
+
 drop if age > 54               // exclude over 54
+tabstat age sex educ Marital_Status Usual_Principal_Activity_Status, by(year)
+
+list age Usual_Principal_Activity_Status in 1/29850 if year==1999
+ 
 drop if Marital_Status != 2.   // keep only Married
+tabstat age sex educ Marital_Status Usual_Principal_Activity_Status, by(year)
+
 
 capture drop rural_male urban_male rural_female urban_female
 capture drop lfpr_rm lfpr_um lfpr_rf lfpr_uf
@@ -721,15 +832,12 @@ foreach y in `years' {
 esttab year_* using "${outputpath}summary_table1.tex", replace ///
     cells("mean(fmt(2))") ///
 	varlabels(lfpr_rm "Rural Male" lfpr_rf "Rural Female" lfpr_um "Urban Male" lfpr_uf "Urban Female") ///
-	mtitles("2004" "2007" "2009" "2011") ///
+	mtitles("1999" "2004" "2007" "2009" "2011") ///
 	collabels(none) ///
     nonumber label booktabs ///
 	stats(N, labels("Observations"))
-	
-* EXIT EXIT EXIT
-* exit
-* EXIT EXIT EXIT
 
+	
 capture drop emp_reg emp_cas emp_self
 capture drop um_* uf_* rm_* rf_*
 
@@ -758,7 +866,7 @@ esttab b_year_* using "${outputpath}summary_table2.tex", replace ///
 	varlabels(  rm_reg  "Rural Male" rf_reg  "Rural Female" um_reg  "Urban Male" uf_reg  "Urban Female" ///
 				rm_cas  "Rural Male" rf_cas  "Rural Female" um_cas  "Urban Male" uf_cas  "Urban Female"  ///
 				rm_self "Rural Male" rf_self "Rural Female" um_self "Urban Male" uf_self "Urban Female") ///
-	mtitles("2004" "2007" "2009" "2011") ///
+	mtitles("1999" "2004" "2007" "2009" "2011") ///
 	collabels(none) ///
     nonumber label booktabs ///
 	stats(N, labels("Observations"))
@@ -780,14 +888,12 @@ label values religion religion_label
 
 tabstat employed [aweight=weight], by(educ)
 
-* graph bar employed, over(educ) b1title("Education") ytitle("FLFPR (%)") bar(1, fcolor(black))
-
 graph bar (mean) employed [aweight=weight], ///
     over(year, label(angle(45))) ///
     over(educ) ///
     bar(1, fcolor(gs12)) bar(2, fcolor(gs8)) bar(3, fcolor(black)) ///
     ytitle("FLFPR (%)") ///
-    legend(label(1 "2007") label(2 "2009") label(3 "2011")) ///
+    legend(label(1 "1999") label(2 "2004") label(3 "2007") label(4 "2009") label(5 "2011")) ///
     b1title("Education Level")
 
 graph export "${outputpath}flfpr_education.jpg", replace
@@ -803,13 +909,14 @@ preserve
 	gen upper = (employed + 1.96 * se_emp)
 	gen lower = (employed - 1.96 * se_emp)
 	twoway	(rarea upper lower age_bin, fcolor(gs14) lcolor(none)) ///
-			(line employed age_bin if year == 2004 , sort lcolor(black) lwidth(medium) lpattern(dash)) ///
-			(line employed age_bin if year == 2007 , sort lcolor(black) lwidth(medium) lpattern(dash)) ///
-			(line employed age_bin if year == 2009 , sort lcolor(gs8)   lwidth(medium) lpattern(shortdash)) ///
-			(line employed age_bin if year == 2011 , sort lcolor(gs4)   lwidth(thick) ), ///
+			(line employed age_bin if year == 1999 , sort lcolor(black) lwidth(thin) lpattern(line)) ///
+			(line employed age_bin if year == 2004 , sort lcolor(black) lwidth(thin) lpattern(dash)) ///
+			(line employed age_bin if year == 2007 , sort lcolor(black) lwidth(medium) lpattern(line)) ///
+			(line employed age_bin if year == 2009 , sort lcolor(black) lwidth(medium) lpattern(dash)) ///
+			(line employed age_bin if year == 2011 , sort lcolor(black) lwidth(thick) ), ///
 		xtitle("Age Group") ///
 		ytitle("FLFPR(%)") ///
-		legend(order(2 3 4 5 1) label (1 "95% CI(2011)") label(2 "2004") label(3 "2007") label(4 "2009") label(5 "2011"))
+		legend(order(2 3 4 5 6 1) label (1 "95% CI(2011)") label(2 "1999") label(3 "2004") label(4 "2007") label(5 "2009") label(6 "2011"))
 	graph export "${outputpath}flfpr_age.jpg", replace
 restore
 
@@ -850,10 +957,10 @@ foreach y in `years' {
 esttab year_* using "${outputpath}summary_table3.tex", replace ///
     cells("mean(fmt(2))") stats(N, labels("Observations")) ///
     label booktabs nonumber ///
-	mtitles("2004" "2007" "2009" "2011") ///
+	mtitles("1999" "2004" "2007" "2009" "2011") ///
 	collabels(none) ///
 	refcat(sg_1 "\textbf{Social Group}" rel_hindu "\textbf{Religion}" educ_illiterate "\textbf{Education}" work_1 "\textbf{Employment}", nolabel) ///
-	varlabels(other_members_earnings "Other Earnings (INR) (wk)" sg_1 "ST" sg_2 "SC" sg_3 "OBC" sg_4 "Other" rel_hindu "Hindu" rel_muslim "Muslim" rel_christian "Christianity" rel_sikh "Sikh" rel_jain "Jain" rel_buddhist "Buddhist" rel_zoroastrian "Zoroastrian" rel_other "Other" educ_illiterate "Illiterate" educ_literate "Literate" educ_primary "Primary" educ_middle "Middle" educ_secondary "Secondary" educ_graduate "Graduate" work_1 "Agriculture" work_2 "Manufacturing" work_3 "Construction" work_4 "Services" work_5 "Other")
+	varlabels(hhsize "Household Size" other_members_earnings "Other Earnings (INR) (wk)" sg_1 "ST" sg_2 "SC" sg_3 "OBC" sg_4 "Other" rel_hindu "Hindu" rel_muslim "Muslim" rel_christian "Christianity" rel_sikh "Sikh" rel_jain "Jain" rel_buddhist "Buddhist" rel_zoroastrian "Zoroastrian" rel_other "Other" educ_illiterate "Illiterate" educ_literate "Literate" educ_primary "Primary" educ_middle "Middle" educ_secondary "Secondary" educ_graduate "Graduate" work_1 "Agriculture" work_2 "Manufacturing" work_3 "Construction" work_4 "Services" work_5 "Other")
 
 	
 * By State
@@ -910,7 +1017,7 @@ foreach y in `years' {
 esttab year_* using "${outputpath}summary_table4.tex", replace ///
     cells("mean(fmt(2))") stats(N, labels("Observations")) ///
     label booktabs nonumber ///
-	mtitles("2004" "2007" "2009" "2011") ///
+	mtitles("1999" "2004" "2007" "2009" "2011") ///
 	collabels(none) ///
 	refcat(100 "\textbf{Southern States}" 201 "\textbf{Northern States}" 300 "\textbf{Eastern Region}" 400 "\textbf{Western Region}" 500 "\textbf{Central Region}" 600 "\textbf{North East}", nolabel) ///
 	varlabels(1 "Jammu / Kashmir" 2 "Himachal Pradesh" 3 "Punjab" 4 "Chandigargh" 5 "Uttaranchal" 6 "Haryana" 7 "Delhi" 8 "Rajasthan" 9 "Uttar Pradesh" 10 "Bihar" 11 "Sikkim" 12 "Arrunachal Pradesh" 13 "Nagaland" 14 "Manipur" 15 "Mizoram" 16 "Tripura" 17 "Maghalaya" 18 "Assam" 19 "West Bengal" 20 "Jharkand" 21 "Orissa" 22 "Chattisgargh" 23 "Madhya Pradesh" 24 "Gujurat" 25 "Daman / Diu" 26 "D/N Haveli" 27 "Maharashtra" 28 "Andhra Pradesh" 29 "Karnataka"  33 "Tamil Nadu" 30 "Goa" 31 "Lakshadweep" 32 "Kerala" 34 "Pondicherry" 35 "A N Islands" 100 "Andhra Pradesh" 101 "Karnataka" 102 "Kerala" 103 "Lakshadweep" 104 "Pondicherry" 105 "Tamil Nadu" 200 "Haryana" 201 "Himachal Pradesh" 202 "Punjab" 203 "Rajasthan" 204 "Himachal Pradesh" 205 "Jammu / Kashmir" 206 "Punjab" 207 "Rajasthan" 208 "Uttaranchal" 300 "Andaman Nicobar Islands" 301 "Bihar" 302 "Jharkand" 303 "Orissa" 304 "West Bengal" 400 "Daman / Diu" 401 "D/N Haveli" 402 "Goa" 403 "Gujurat" 404 "Maharashtra" 500 "Chattisgargh" 501 "Madhya Prdesh" 502 "Uttar Pradesh" 600 "Arunachal Pradesh" 601 "Assam" 602 "Manipur" 603 "Meghalaya" 604 "Mizoram" 605 "Nagaland" 606 "Sikkim" 607 "Tripura")
